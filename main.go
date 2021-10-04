@@ -4,6 +4,7 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	f "github.com/fauna/faunadb-go/v4/faunadb"
@@ -117,6 +118,30 @@ func main() {
 
 	if err != nil {
 		panic(err)
+	}
+
+	// enumerate directory
+	files, err := os.ReadDir("/Volumes/Mini Pudge/edc/photographs/")
+	if err != nil {
+		panic(err)
+	}
+
+	for _, fi := range files {
+		if !fi.IsDir() && strings.HasSuffix(fi.Name(), "jpg") {
+			pmd := populatePMD("/Volumes/Mini Pudge/edc/photographs/" + fi.Name())
+
+			pmd.Name = fi.Name()
+			_, err := dbClient.Query(
+				f.Create(
+					f.Collection("photographs"),
+					f.Obj{"data": pmd},
+				),
+			)
+
+			if err != nil {
+				panic(err)
+			}
+		}
 	}
 
 	// res, err := client.Query(f.Get(f.Ref(f.Collection("products"), "202")))

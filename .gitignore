@@ -19,4 +19,4 @@
 dist/
 
 # Test data
-test-data-git-ignore/
+testdata/

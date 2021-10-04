@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"image"
 	_ "image/jpeg"
+	"io"
+	"log"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/rwcarlsen/goexif/exif"
@@ -29,9 +31,9 @@ type PhotoMetaData struct {
 	ID                  uint64
 	Height              int
 	Width               int
-	// Classification      struct {
-	// 	Labels []Labels
-	// }
+	Classification      struct {
+		Labels []Labels
+	}
 }
 
 func getCleanExifValue(md *tiff.Tag) string {
@@ -52,7 +54,7 @@ func getCleanExifValue(md *tiff.Tag) string {
 func populatePMD(filepath string) *PhotoMetaData {
 	fileBytes, err := os.Open(filepath)
 	if err != nil {
-		fmt.Print(err)
+		panic(err)
 	}
 
 	defer fileBytes.Close()
@@ -64,7 +66,6 @@ func populatePMD(filepath string) *PhotoMetaData {
 	}
 
 	var pmd *PhotoMetaData = new(PhotoMetaData)
-
 	exifValueArtist, err := x.Get(exif.Artist)
 
 	if err != nil {
@@ -90,19 +91,34 @@ func populatePMD(filepath string) *PhotoMetaData {
 	pmd.CaptureYearMonth = pmd.CaptureTime.Format("2006-01")
 	pmd.CaptureYearMonthDay = pmd.CaptureTime.Format("2006-01-02")
 
-	exifValueDescription, err := x.Get(exif.ImageDescription)
-
-	if err != nil {
-		fmt.Print("error decoding the description")
-	}
+	exifValueDescription, _ := x.Get(exif.ImageDescription)
 
 	pmd.Description = getCleanExifValue(exifValueDescription)
 
-	exifVaultWidth, _ := x.Get(exif.ImageWidth)
-	pmd.Width, _ = strconv.Atoi(getCleanExifValue(exifVaultWidth))
+	// Need to rewind to the start of the file so I can get the dimensions (since they aren't in the EXIF)
+	fileBytes.Seek(0, io.SeekStart)
+	im, _, err := image.DecodeConfig(fileBytes)
 
-	exifVaultLength, _ := x.Get(exif.ImageLength) // Image height called
-	pmd.Height, _ = strconv.Atoi(getCleanExifValue(exifVaultLength))
+	if err != nil {
+		log.Printf("cannot open %s to get dimensions\n", filepath)
+	} else {
+		pmd.Width = im.Width
+		pmd.Height = im.Height
+	}
+
+	l := Labels{
+		Name:       "Andy Test",
+		Confidence: 0.5,
+	}
+
+	pmd.Classification.Labels = append(pmd.Classification.Labels, l)
+
+	l1 := Labels{
+		Name:       "Andy Test2",
+		Confidence: 0.75,
+	}
+
+	pmd.Classification.Labels = append(pmd.Classification.Labels, l1)
 
 	return pmd
 }
