@@ -1,14 +1,21 @@
 package main
 
 import (
+	"bufio"
+	"crypto/sha256"
 	"fmt"
 	"image"
-	_ "image/jpeg"
+	"image/jpeg"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/rekognition"
+	"github.com/corona10/goimagehash"
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/rwcarlsen/goexif/tiff"
 )
@@ -21,19 +28,22 @@ type Labels struct {
 type PhotoMetaData struct {
 	Name                string
 	ParsedName          string
+	PrefixName          string
 	Artist              string
 	CaptureTime         time.Time
 	CaptureYear         string
 	CaptureYearMonth    string
 	CaptureYearMonthDay string
+	UploadTime          time.Time
 	Description         string
 	Caption             string
-	ID                  uint64
 	Height              int
 	Width               int
-	Classification      struct {
-		Labels []Labels
-	}
+	Sha256              string
+	PerceptualHash      string
+	// Classification      struct {
+	// 	Labels []Labels
+	// }
 }
 
 func getCleanExifValue(md *tiff.Tag) string {
@@ -66,6 +76,9 @@ func populatePMD(filepath string) *PhotoMetaData {
 	}
 
 	var pmd *PhotoMetaData = new(PhotoMetaData)
+
+	pmd.UploadTime = time.Now().UTC()
+
 	exifValueArtist, err := x.Get(exif.Artist)
 
 	if err != nil {
@@ -106,19 +119,52 @@ func populatePMD(filepath string) *PhotoMetaData {
 		pmd.Height = im.Height
 	}
 
-	l := Labels{
-		Name:       "Andy Test",
-		Confidence: 0.5,
+	// Need to rewind the file again to get the sha256
+	fileBytes.Seek(0, io.SeekStart)
+	h := sha256.New()
+	if _, err := io.Copy(h, fileBytes); err != nil {
+		panic(err)
+	}
+	pmd.Sha256 = fmt.Sprintf("%x", h.Sum(nil))
+
+	// Perceptual hash (and yet another rewind of the file)
+	fileBytes.Seek(0, io.SeekStart)
+	img1, _ := jpeg.Decode(fileBytes)
+
+	phash, _ := goimagehash.PerceptionHash(img1)
+	pmd.PerceptualHash = fmt.Sprintf("%x", phash.GetHash())
+
+	// Rekognition
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1"),
+	})
+
+	if err != nil {
+		fmt.Println("Error creating session:", err)
 	}
 
-	pmd.Classification.Labels = append(pmd.Classification.Labels, l)
+	svc := rekognition.New(sess)
 
-	l1 := Labels{
-		Name:       "Andy Test2",
-		Confidence: 0.75,
+	fileBytes.Seek(0, io.SeekStart)
+	reader := bufio.NewReader(fileBytes)
+	content, _ := ioutil.ReadAll(reader)
+
+	inputRkg := &rekognition.DetectLabelsInput{
+		Image: &rekognition.Image{
+			Bytes: content,
+		},
 	}
 
-	pmd.Classification.Labels = append(pmd.Classification.Labels, l1)
+	result, err := svc.DetectLabels(inputRkg)
+
+	if err != nil {
+		log.Printf("error with DetectLabels %v\n", err)
+	}
+
+	for _, lab := range result.Labels {
+		l := Labels{*lab.Name, *lab.Confidence}
+		pmd.Classification.Labels = append(pmd.Classification.Labels, l)
+	}
 
 	return pmd
 }

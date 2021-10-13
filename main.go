@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	f "github.com/fauna/faunadb-go/v4/faunadb"
 )
@@ -86,6 +85,7 @@ func createCollection(collectionName string, dbClient *f.FaunaClient) {
 	} else {
 		log.Printf("Collection: %s, Already Exists\n", collectionName)
 	}
+
 }
 
 func main() {
@@ -94,41 +94,89 @@ func main() {
 	dbClient := getDbClient()
 	createCollection("photographs", dbClient)
 
-	pmd := PhotoMetaData{
-		Name:                "test.jpg",
-		ParsedName:          "testParsedName",
-		Artist:              "testArtist",
-		CaptureTime:         time.Now(),
-		CaptureYear:         "2020",
-		CaptureYearMonth:    "2020-01",
-		CaptureYearMonthDay: "2020-01-01",
-		Description:         "testDescription",
-		Caption:             "testCaption",
-		ID:                  1,
-		Height:              100,
-		Width:               100,
-	}
+	/*
 
-	_, err := dbClient.Query(
-		f.Create(
-			f.Collection("photographs"),
-			f.Obj{"data": pmd},
-		),
-	)
+		# Indexes:
 
-	if err != nil {
-		panic(err)
-	}
+		CreateIndex({
+		  name: "photographs_sort_by_capturedate_asc",
+		  source: Collection("photographs"),
+		  values: [
+		    { field: ["data", "CaptureYearMonthDay"] },
+		    { field: ["ref"] }
+		  ]
+		})
+
+		CreateIndex({
+		  name: "photographs_sort_by_capturedate_desc",
+		  source: Collection("photographs"),
+		  values: [
+		    { field: ["data", "CaptureYearMonthDay"], reverse: true },
+		    { field: ["ref"] }
+		  ]
+		})
+
+		CreateIndex({
+		  name: "photographs_search_by_name",
+		  source: Collection("photographs"),
+		  terms: [
+		    { field: ["data", "Name"] }
+		  ]
+		})
+
+CreateIndex({
+  name: "photographs_sort_by_prefix_asc",
+  source: Collection("photographs"),
+  values: [{ field: ["data", "PrefixName"] }, { field: ["ref"] }]
+})
+
+CreateIndex({
+  name: "photographs_search_by_prefix_asc",
+  source: Collection("photographs"),
+  terms: [{ field: ["data", "PrefixName"] }]
+})
+
+	*/
+	// pmd := PhotoMetaData{
+	// 	Name:                "test.jpg",
+	// 	ParsedName:          "testParsedName",
+	// 	Artist:              "testArtist",
+	// 	CaptureTime:         time.Now(),
+	// 	CaptureYear:         "2020",
+	// 	CaptureYearMonth:    "2020-01",
+	// 	CaptureYearMonthDay: "2020-01-01",
+	// 	Description:         "testDescription",
+	// 	Caption:             "testCaption",
+	// 	ID:                  1,
+	// 	Height:              100,
+	// 	Width:               100,
+	// }
+
+	// _, err := dbClient.Query(
+	// 	f.Create(
+	// 		f.Collection("photographs"),
+	// 		f.Obj{"data": pmd},
+	// 	),
+	// )
+
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	// enumerate directory
-	files, err := os.ReadDir("/Volumes/Mini Pudge/edc/photographs/")
+	// files, err := os.ReadDir("/Volumes/Mini Pudge/edc/photographs/")
+	files, err := os.ReadDir("./testdata/")
 	if err != nil {
 		panic(err)
 	}
 
 	for _, fi := range files {
 		if !fi.IsDir() && strings.HasSuffix(fi.Name(), "jpg") {
-			pmd := populatePMD("/Volumes/Mini Pudge/edc/photographs/" + fi.Name())
+			pmd := populatePMD("./testdata/" + fi.Name())
+
+			// parse out the first part of the filename
+			parts := strings.Split(fi.Name(), "-")
+			pmd.PrefixName = parts[0]
 
 			pmd.Name = fi.Name()
 			_, err := dbClient.Query(
