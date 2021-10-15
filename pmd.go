@@ -41,9 +41,9 @@ type PhotoMetaData struct {
 	Width               int
 	Sha256              string
 	PerceptualHash      string
-	// Classification      struct {
-	// 	Labels []Labels
-	// }
+	Classification      struct {
+		Labels []Labels
+	}
 }
 
 func getCleanExifValue(md *tiff.Tag) string {
