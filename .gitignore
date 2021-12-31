@@ -1,3 +1,6 @@
+#ignore testdata for now
+testdata*
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
