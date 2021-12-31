@@ -2,18 +2,42 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	f "github.com/fauna/faunadb-go/v4/faunadb"
 )
+
+type CloudflareResponseStruct struct {
+	Result struct {
+		ID                string    `json:"id"`
+		Filename          string    `json:"filename"`
+		Uploaded          time.Time `json:"uploaded"`
+		RequireSignedURLs bool      `json:"requireSignedURLs"`
+		Variants          []string  `json:"variants"`
+	} `json:"result"`
+	ResultInfo interface{}   `json:"result_info"`
+	Success    bool          `json:"success"`
+	Errors     []interface{} `json:"errors"`
+	Messages   []interface{} `json:"messages"`
+}
 
 var (
 	secret   = os.Getenv("FAUNADB_SECRET")
 	endpoint = f.Endpoint("https://db.us.fauna.com")
 
 	client = f.NewFaunaClient(secret, endpoint)
+
+	cloudflareSecret = os.Getenv("CLOUDFLARE_BEARER_TOKEN")
 
 	// dbName = "emms"
 )
@@ -40,52 +64,24 @@ var (
 // 	}
 // }
 
-// func getDbClient() (dbClient *f.FaunaClient) {
-// 	var res f.Value
-// 	var err error
-// 	var dbSecret string
+// func createCollection(collectionName string, dbClient *f.FaunaClient) {
 
-// 	res, err = client.Query(
-// 		f.CreateKey(f.Obj{
-// 			"database": f.Database(dbName),
-// 			"role":     "server",
-// 		}))
+// 	res, err := dbClient.Query(
+// 		f.If(
+// 			f.Exists(f.Collection(collectionName)),
+// 			true,
+// 			f.CreateCollection(f.Obj{"name": collectionName})))
 
 // 	if err != nil {
 // 		panic(err)
 // 	}
 
-// 	err = res.At(f.ObjKey("secret")).Get(&dbSecret)
-
-// 	if err != nil {
-// 		panic(err)
+// 	if res != f.BooleanV(true) {
+// 		log.Printf("Created Collection: %s\n", collectionName)
+// 	} else {
+// 		log.Printf("Collection: %s, Already Exists\n", collectionName)
 // 	}
-
-// 	log.Printf("Database: %s, specific key: %s\n", dbName, dbSecret)
-
-// 	dbClient = client.NewSessionClient(dbSecret)
-
-// 	return
 // }
-
-func createCollection(collectionName string, dbClient *f.FaunaClient) {
-
-	res, err := dbClient.Query(
-		f.If(
-			f.Exists(f.Collection(collectionName)),
-			true,
-			f.CreateCollection(f.Obj{"name": collectionName})))
-
-	if err != nil {
-		panic(err)
-	}
-
-	if res != f.BooleanV(true) {
-		log.Printf("Created Collection: %s\n", collectionName)
-	} else {
-		log.Printf("Collection: %s, Already Exists\n", collectionName)
-	}
-}
 
 /*
 
@@ -99,52 +95,208 @@ CreateIndex({
   name: "photographs_sort_by_capturedate_asc",
   source: Collection("photographs"),
   values: [
-    { field: ["data", "CaptureYearMonthDay"] },
+    { field: ["data", "CaptureDate"] },
+    { field: ["data", "Name"] },
+    { field: ["data", "CloudflareId"] },
+    { field: ["data", "CloudflarePartialUrl"] },
+    { field: ["ref"] }
+  ]
+})
+
+
+CreateIndex({
+  name: "photographs_sort_by_capturedate_desc",
+  source: Collection("photographs"),
+  values: [
+    { field: ["data", "CaptureDate"], reverse: true },
+    { field: ["data", "Name"] },
+    { field: ["data", "CloudflareId"] },
+	{ field: ["data", "CloudflarePartialUrl"] },
+    { field: ["ref"] }
+  ]
+})
+
+CreateIndex({
+  name: "audios_search_by_name",
+  source: Collection("audios"),
+  terms: [{ field: ["data", "Name"] }]
+})
+
+CreateIndex({
+  name: "audios_sort_by_capturedate_desc",
+  source: Collection("audios"),
+  values: [
+    { field: ["data", "RecordingDate"], reverse: true },
     { field: ["data", "Name"] },
     { field: ["ref"] }
   ]
 })
 
 CreateIndex({
-  name: "photographs_sort_by_capturedate_desc",
-  source: Collection("photographs"),
+  name: "audios_sort_by_capturedate_asc",
+  source: Collection("audios"),
   values: [
-    { field: ["data", "CaptureYearMonthDay"], reverse: true },
+    { field: ["data", "RecordingDate"] },
     { field: ["data", "Name"] },
     { field: ["ref"] }
   ]
 })
+
 
 ## QUERY
 Map(
   Paginate(Match(Index("photographs_sort_by_capturedate_asc"))),
   Lambda("pr", Get(Select([2], Var("pr"))))
 )
+
+## Include just the URLS
+Map(
+  Paginate(Match(Index("all_photographs"))),
+  Lambda(
+    "photoRef",
+    Let(
+      {
+        photoDoc: Get(Var("photoRef"))
+      },
+      {
+        id: Select(["ref", "id"], Var("photoDoc")),
+        CaptureDate: Select(["data", "CaptureDate"], Var("photoDoc")),
+        Name: Select(["data", "Name"], Var("photoDoc")),
+        Urls: Select(["data", "Urls"], Var("photoDoc"))
+      }
+    )
+  )
+)
 */
+
+func uploadCloudflare(path string) CloudflareResponseStruct {
+	var cloudflareResponse CloudflareResponseStruct
+
+	file, err := os.Open(path)
+	if err != nil {
+		log.Fatalf("1. err: %x", err)
+	}
+	defer file.Close()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", filepath.Base(path))
+	if err != nil {
+		log.Fatalf("2. err: %x", err.Error())
+	}
+	_, err = io.Copy(part, file)
+	if err != nil {
+		log.Fatalf("3. err: %x", err.Error())
+	}
+
+	writer.Close()
+
+	if err != nil {
+		log.Fatalf("4. err: %x", err.Error())
+	}
+
+	// Generated by curl-to-Go: https://mholt.github.io/curl-to-go
+
+	// curl -X POST -F file=@/Volumes/Mini\ Pudge/edc/photographs/20161029-game-7-2020.jpg -H "Authorization: Bearer <token>" https://api.cloudflare.com/client/v4/accounts/5930846a5870031c415bb26e42e38833/images/v1
+
+	req, err := http.NewRequest("POST", "https://api.cloudflare.com/client/v4/accounts/5930846a5870031c415bb26e42e38833/images/v1", body)
+	if err != nil {
+		log.Fatalf("5. err: %x", err.Error())
+	}
+
+	bearer := "Bearer " + cloudflareSecret
+
+	req.Header.Set("Authorization", bearer)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Fatalf("6. err: %x", err.Error())
+	} else {
+		defer resp.Body.Close()
+		bodyJson := &bytes.Buffer{}
+		_, err := bodyJson.ReadFrom(resp.Body)
+		if err != nil {
+			log.Fatalf("7. err: %x", err.Error())
+		}
+
+		decoder := json.NewDecoder(bodyJson)
+		err = decoder.Decode(&cloudflareResponse)
+		if err != nil {
+			log.Printf("8. err: %x", err.Error())
+			cloudflareResponse.Success = false
+		}
+	}
+	return cloudflareResponse
+}
 
 func main() {
 
 	// createDatabase()
 	// dbClient := getDbClient()
-	createCollection("photographs", client)
+	// createCollection("photographs", client)
 
 	// enumerate directory
 	// files, err := os.ReadDir("/Volumes/Mini Pudge/edc/photographs/")
-	const sourceDirectory = "./testdata/"
-	files, err := os.ReadDir(sourceDirectory)
+
+	// const dirPath = "/Volumes/Mini Pudge/edc/photographs/"
+	const dirPath = "/Volumes/Mini Pudge/edc/piano/"
+	// const dirPath = "./testdata/"
+
+	files, err := os.ReadDir(dirPath)
 	if err != nil {
-		panic(err)
+		log.Printf("err: %x", err)
 	}
 
 	for _, fi := range files {
+		time.Sleep(2 * time.Second)
+
+		fmt.Printf("Processing: %s\n", fi.Name())
+
 		if !fi.IsDir() && strings.HasSuffix(fi.Name(), "jpg") {
-			pmd := populatePMD(sourceDirectory + fi.Name())
+			cfr := uploadCloudflare(dirPath + fi.Name())
+
+			if !cfr.Success {
+				fmt.Printf("Could not upload %x\n", fi.Name())
+				continue // skip this file
+			}
+
+			pmd := populatePMD(dirPath + fi.Name())
 
 			// parse out the first part of the filename
 			parts := strings.Split(fi.Name(), "-")
 			pmd.PrefixName = parts[0]
 
 			pmd.Name = fi.Name()
+			pmd.UploadTime = cfr.Result.Uploaded
+			pmd.CloudflareId = cfr.Result.ID
+			pmd.CloudflarePartialUrl = "https://imagedelivery.net/Zgety72ez9NMy5vNjlIElg/" + cfr.Result.ID + "/"
+
+			for _, variant := range cfr.Result.Variants {
+				switch {
+				case strings.HasSuffix(variant, "public"):
+					pmd.VariantUrls.Public = variant
+				case strings.HasSuffix(variant, "square100"):
+					pmd.VariantUrls.Square100 = variant
+				case strings.HasSuffix(variant, "square150"):
+					pmd.VariantUrls.Square150 = variant
+				case strings.HasSuffix(variant, "square200"):
+					pmd.VariantUrls.Square200 = variant
+				case strings.HasSuffix(variant, "w1280"):
+					pmd.VariantUrls.W1280 = variant
+				case strings.HasSuffix(variant, "w1920"):
+					pmd.VariantUrls.W1920 = variant
+				case strings.HasSuffix(variant, "w2560"):
+					pmd.VariantUrls.W2560 = variant
+				case strings.HasSuffix(variant, "w320"):
+					pmd.VariantUrls.W320 = variant
+				case strings.HasSuffix(variant, "w640"):
+					pmd.VariantUrls.W640 = variant
+				case strings.HasSuffix(variant, "w960"):
+					pmd.VariantUrls.W960 = variant
+				}
+			}
+
 			_, err := client.Query(
 				f.Create(
 					f.Collection("photographs"),
@@ -153,7 +305,21 @@ func main() {
 			)
 
 			if err != nil {
-				panic(err)
+				log.Printf("err: %x", err)
+			}
+		} else if !fi.IsDir() && strings.HasSuffix(fi.Name(), "mp3") {
+			amd := populateAMD(dirPath + fi.Name())
+			amd.Name = fi.Name()
+
+			_, err := client.Query(
+				f.Create(
+					f.Collection("audios"),
+					f.Obj{"data": amd},
+				),
+			)
+
+			if err != nil {
+				log.Printf("err: %x", err)
 			}
 		}
 	}

@@ -1,20 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"crypto/sha256"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/rekognition"
 	"github.com/corona10/goimagehash"
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/rwcarlsen/goexif/tiff"
@@ -26,24 +21,36 @@ type Labels struct {
 }
 
 type PhotoMetaData struct {
-	Name                string
-	ParsedName          string
-	PrefixName          string
-	Artist              string
-	CaptureTime         time.Time
-	CaptureYear         string
-	CaptureYearMonth    string
-	CaptureYearMonthDay string
-	UploadTime          time.Time
-	Description         string
-	Caption             string
-	Height              int
-	Width               int
-	Sha256              string
-	PerceptualHash      string
-	Classification      struct {
-		Labels []Labels
+	Name                 string
+	ParsedName           string
+	PrefixName           string
+	Artist               string
+	CaptureDate          time.Time
+	UploadTime           time.Time
+	Description          string
+	Caption              string
+	Height               int
+	Width                int
+	Sha256               string
+	PerceptualHash       string
+	CloudflareId         string
+	CloudflarePartialUrl string
+	VariantUrls          struct {
+		Square150 string
+		Square100 string
+		Square200 string
+		W960      string
+		W1280     string
+		W640      string
+		Public    string
+		W2560     string
+		W320      string
+		W1920     string
 	}
+
+	// Classification      struct {
+	// 	Labels []Labels
+	// }
 }
 
 func getCleanExifValue(md *tiff.Tag) string {
@@ -64,7 +71,7 @@ func getCleanExifValue(md *tiff.Tag) string {
 func populatePMD(filepath string) *PhotoMetaData {
 	fileBytes, err := os.Open(filepath)
 	if err != nil {
-		panic(err)
+		log.Printf("err: %x", err)
 	}
 
 	defer fileBytes.Close()
@@ -87,7 +94,7 @@ func populatePMD(filepath string) *PhotoMetaData {
 
 	pmd.Artist = getCleanExifValue(exifValueArtist)
 
-	pmd.CaptureTime, err = x.DateTime()
+	pmd.CaptureDate, err = x.DateTime()
 
 	if err != nil {
 		fmt.Print("error decodeing the time")
@@ -100,9 +107,9 @@ func populatePMD(filepath string) *PhotoMetaData {
 	// pattern with which to format/parse a given time/string.
 	// The example time must be exactly as shown: the year 2006,
 	// 15 for the hour, Monday for the day of the week, etc.
-	pmd.CaptureYear = pmd.CaptureTime.Format("2006")
-	pmd.CaptureYearMonth = pmd.CaptureTime.Format("2006-01")
-	pmd.CaptureYearMonthDay = pmd.CaptureTime.Format("2006-01-02")
+	// pmd.CaptureYear = pmd.CaptureDate.Format("2006")
+	// pmd.CaptureYearMonth = pmd.CaptureDate.Format("2006-01")
+	// pmd.CaptureYearMonthDay = pmd.CaptureDate.Format("2006-01-02")
 
 	exifValueDescription, _ := x.Get(exif.ImageDescription)
 
@@ -123,7 +130,7 @@ func populatePMD(filepath string) *PhotoMetaData {
 	fileBytes.Seek(0, io.SeekStart)
 	h := sha256.New()
 	if _, err := io.Copy(h, fileBytes); err != nil {
-		panic(err)
+		log.Printf("err: %x", err)
 	}
 	pmd.Sha256 = fmt.Sprintf("%x", h.Sum(nil))
 
@@ -135,36 +142,36 @@ func populatePMD(filepath string) *PhotoMetaData {
 	pmd.PerceptualHash = fmt.Sprintf("%x", phash.GetHash())
 
 	// Rekognition
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String("us-east-1"),
-	})
+	// sess, err := session.NewSession(&aws.Config{
+	// 	Region: aws.String("us-east-1"),
+	// })
 
-	if err != nil {
-		fmt.Println("Error creating session:", err)
-	}
+	// if err != nil {
+	// 	fmt.Println("Error creating session:", err)
+	// }
 
-	svc := rekognition.New(sess)
+	// svc := rekognition.New(sess)
 
-	fileBytes.Seek(0, io.SeekStart)
-	reader := bufio.NewReader(fileBytes)
-	content, _ := ioutil.ReadAll(reader)
+	// fileBytes.Seek(0, io.SeekStart)
+	// reader := bufio.NewReader(fileBytes)
+	// content, _ := ioutil.ReadAll(reader)
 
-	inputRkg := &rekognition.DetectLabelsInput{
-		Image: &rekognition.Image{
-			Bytes: content,
-		},
-	}
+	// inputRkg := &rekognition.DetectLabelsInput{
+	// 	Image: &rekognition.Image{
+	// 		Bytes: content,
+	// 	},
+	// }
 
-	result, err := svc.DetectLabels(inputRkg)
+	// result, err := svc.DetectLabels(inputRkg)
 
-	if err != nil {
-		log.Printf("error with DetectLabels %v\n", err)
-	}
+	// if err != nil {
+	// 	log.Printf("error with DetectLabels %v\n", err)
+	// }
 
-	for _, lab := range result.Labels {
-		l := Labels{*lab.Name, *lab.Confidence}
-		pmd.Classification.Labels = append(pmd.Classification.Labels, l)
-	}
+	// for _, lab := range result.Labels {
+	// 	l := Labels{*lab.Name, *lab.Confidence}
+	// 	pmd.Classification.Labels = append(pmd.Classification.Labels, l)
+	// }
 
 	return pmd
 }
