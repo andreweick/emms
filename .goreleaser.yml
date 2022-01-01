@@ -34,7 +34,7 @@ changelog:
 brews:
   - tap:
       owner: andreweick
-      name: emms-tap
+      name: homebrew-emms
     folder: Formula
     goarm: "7"
     homepage:  https://eick.com
