@@ -31,12 +31,6 @@ changelog:
       - '^docs:'
       - '^test:'
 
-signs:
-- cmd: cosign
-  stdin: "{{ COSIGN_PWD }}"
-  args: ["sign-blob", "--key=cosign.key", "--output=${signature}", "${artifact}"]
-  artifacts: all
-
 brews:
   - tap:
       owner: andreweick
