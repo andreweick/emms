@@ -31,8 +31,20 @@ changelog:
       - '^docs:'
       - '^test:'
 
-signs:
-- cmd: cosign
-  stdin: '{{ .Env.COSIGN_PWD }}'
-  args: ["sign-blob", "--key=cosign.key", "--output=${signature}", "${artifact}"]
-  artifacts: all
+brews:
+  - tap:
+      owner: andreweick
+      name: emms-tap
+    folder: Formula
+    goarm: "7"
+    homepage:  https://eick.com
+    description: Manage media for eick.com
+    license: MIT
+    test: |
+      system "#{bin}/goreleaser -v"
+    dependencies:
+    - name: go
+      type: optional
+    - name: git
+    conflicts:
+    - goreleaser-pro
