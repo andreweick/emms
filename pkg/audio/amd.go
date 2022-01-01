@@ -1,4 +1,4 @@
-package main
+package amd
 
 import (
 	"crypto/sha256"
@@ -26,7 +26,7 @@ type AudioMetaData struct {
 	Sha256        string
 }
 
-func populateAMD(filepath string) *AudioMetaData {
+func PopulateAMD(filepath string) *AudioMetaData {
 	fileBytes, err := os.Open(filepath)
 	if err != nil {
 		log.Printf("err: %x", err)

@@ -1,4 +1,4 @@
-package main
+package pmd
 
 import (
 	"crypto/sha256"
@@ -53,7 +53,7 @@ type PhotoMetaData struct {
 	// }
 }
 
-func getCleanExifValue(md *tiff.Tag) string {
+func GetCleanExifValue(md *tiff.Tag) string {
 	if md == nil {
 		return ""
 	}
@@ -68,7 +68,7 @@ func getCleanExifValue(md *tiff.Tag) string {
 	return s
 }
 
-func populatePMD(filepath string) *PhotoMetaData {
+func PopulatePMD(filepath string) *PhotoMetaData {
 	fileBytes, err := os.Open(filepath)
 	if err != nil {
 		log.Printf("err: %x", err)
