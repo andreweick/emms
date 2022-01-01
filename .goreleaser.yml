@@ -31,9 +31,6 @@ changelog:
       - '^docs:'
       - '^test:'
 
-sboms:
-  -artifacts: archive
-
 signs:
 - cmd: cosign
   env:
