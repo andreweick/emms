@@ -33,13 +33,6 @@ changelog:
 
 signs:
 - cmd: cosign
-  env:
-  - COSIGN_EXPERIMENTAL=1
-  certificate: '${artifact}.pem'
-  output: true
-  artifacts: checksum
-  args:
-    - sign-blob
-    - '--output-certificate=${certificate}'
-    - '--output-signature=${signature}'
-    - '${artifact}'
+  stdin: '{{ .Env.COSIGN_PWD }}'
+  args: ["sign-blob", "--key=cosign.key", "--output=${signature}", "${artifact}"]
+  artifacts: all
