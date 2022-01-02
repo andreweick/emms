@@ -1,6 +1,9 @@
 #ignore testdata for now
 testdata*
 
+/out/
+/vendor/
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
