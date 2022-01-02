@@ -1,14 +1,46 @@
 /*
-Copyright © 2021 NAME HERE <EMAIL ADDRESS>
+Copyright © 2021 M. Andrew Eick
 
 */
 package cmd
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+type CFConfig struct {
+	CloudflareBearerToken string `mapstructure:"CLOUDFLARE_BEARER_TOKEN"`
+	CloudflareAccountID   string `mapstructure:"CLOUDFLARE_ACCOUNT_ID"`
+}
+
+func LoadConfig(path string) (cfconfig CFConfig, err error) {
+	viper.AddConfigPath(path)
+	viper.SetConfigName("development")
+	viper.SetConfigType("env")
+
+	viper.AutomaticEnv()
+
+	err = viper.ReadInConfig()
+	if err != nil {
+		log.Printf("Could not ReadInConfig %s\n", err.Error())
+		return
+	}
+
+	err = viper.Unmarshal(&cfconfig)
+
+	if err != nil {
+		log.Printf("Could not Unmarshal %s\n", err.Error())
+		return
+	}
+
+	return
+}
 
 // updateCmd represents the update command
 var updateCmd = &cobra.Command{
@@ -21,13 +53,12 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("update called")
+		synchPhotoMetadata()
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(updateCmd)
-
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
@@ -37,4 +68,57 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// updateCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+func synchPhotoMetadata() {
+	fmt.Printf("synchPhotoMetadata\n")
+
+	sendCloudflareList()
+}
+
+func sendCloudflareList() {
+	cfconfig, err := LoadConfig(".")
+
+	if err != nil {
+		log.Fatalf("Cannont load config: %s", err.Error())
+	}
+
+	// Cloudflare List (GET https://api.cloudflare.com/client/v4/accounts/5930846a5870031c415bb26e42e38833/images/v1?page=777&per_page=10)
+
+	// Create client
+	client := &http.Client{}
+
+	// Create request
+	req, err := http.NewRequest("GET", "https://api.cloudflare.com/client/v4/accounts/"+cfconfig.CloudflareAccountID+"/images/v1?page=777&per_page=10", nil)
+
+	if err != nil {
+		fmt.Printf("Error on call %s\n", err.Error())
+		panic(err)
+	}
+
+	// Headers
+	req.Header.Add("Authorization", "Bearer "+cfconfig.CloudflareBearerToken)
+
+	parseFormErr := req.ParseForm()
+	if parseFormErr != nil {
+		fmt.Println(parseFormErr)
+	}
+
+	// Fetch Request
+	resp, err := client.Do(req)
+
+	if err != nil {
+		fmt.Println("Failure : ", err)
+	}
+
+	// Read Response Body
+	respBody, err := ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		fmt.Printf("Error on call %s\n", err.Error())
+		panic(err)
+	}
+
+	// Display Results
+	fmt.Println("response Body : ", string(respBody))
 }
