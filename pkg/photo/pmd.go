@@ -1,4 +1,4 @@
-package pmd
+package photo
 
 import (
 	"crypto/sha256"

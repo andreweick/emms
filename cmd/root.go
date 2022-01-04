@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -13,6 +14,13 @@ import (
 )
 
 var cfgFile string
+
+type EmmsConfig struct {
+	CloudflareBearerToken string `mapstructure:"CLOUDFLARE_BEARER_TOKEN"`
+	CloudflareAccountID   string `mapstructure:"CLOUDFLARE_ACCOUNT_ID"`
+}
+
+var emmsCfg EmmsConfig
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -45,7 +53,7 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.emms.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/emms.env)")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
@@ -59,13 +67,17 @@ func initConfig() {
 		viper.SetConfigFile(cfgFile)
 	} else {
 		// Find home directory.
-		home, err := os.UserHomeDir()
+		// home, err := os.UserHomeDir()
+		// cobra.CheckErr(err)
+
+		// Assume config file in current directory
+		cwd, err := os.Getwd()
 		cobra.CheckErr(err)
 
-		// Search config in home directory with name ".emms" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigType("yaml")
-		viper.SetConfigName(".emms")
+		// Search config in home directory with name "development" (without extension).
+		viper.AddConfigPath(cwd)
+		viper.SetConfigName("emms")
+		viper.SetConfigType("env")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
@@ -73,5 +85,12 @@ func initConfig() {
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+	}
+
+	err := viper.Unmarshal(&emmsCfg)
+
+	if err != nil {
+		log.Printf("Could not Unmarshal %s\n", err.Error())
+		return
 	}
 }
